@@ -28,8 +28,10 @@
     <texture type="skybox" builtin="gradient" rgb1=".3 .5 .7" rgb2="0 0 0" width="32" height="512"/>
     <texture name="body" type="cube" builtin="flat" mark="cross" width="127" height="1278" rgb1="0.8 0.6 0.4" rgb2="0.8 0.6 0.4" markrgb="1 1 1" random="0.01"/>
     <material name="body" texture="body" texuniform="true" rgba="0.8 0.6 .4 1"/>
-    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
-    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0 0 0" rgb2=".3 .3 .3"/>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance="0"/>
+    <texture name="pointer" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+    <material name="pointer" texture="pointer" texuniform="true" rgba="0.1 0 0 1"/>
   </asset>
 
   <default>
@@ -180,6 +182,9 @@
           </body>
         </body>
       </body>
+      <body name="pointer" pos="0 0 .01">
+        <geom name="pointer" fromto="0 0 0 .0016 0 0" material="pointer" size=".02"/>
+      </body>
     </body>
   </worldbody>
 
@@ -245,5 +250,12 @@
                                         -0.24 -0.007 -0.34 -1.76 -0.466 -0.0415
                                         -0.08 -0.01 -0.37 -0.685 -0.35 -0.09
                                         0.109 -0.067 -0.7 -0.05 0.12 0.16"/>
+
+    <key name="stand_on_2_legs" qpos="0 0 1.282
+                                      1 0 0 0
+                                      0 -0.002 0
+                                      0 0 0 0 0 0
+                                      0 0 0 0 0 0
+                                      0.9 -1 -1 0.9 -1 -1"/>
   </keyframe>
 </mujoco>

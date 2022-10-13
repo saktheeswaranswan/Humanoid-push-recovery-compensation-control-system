@@ -67,6 +67,8 @@ def lqr(model, data, qpos0, ctrl0):
     # Construct the Q matrix for position DoFs.
     Qpos = BALANCE_COST * Qbalance + Qjoint
 
+    # Qpos = np.eye(nv)
+
     # No explicit penalty for velocities.
     Q = np.block([[Qpos, np.zeros((nv, nv))],
                 [np.zeros((nv, 2*nv))]])

@@ -8,24 +8,13 @@ import scipy.linalg
 from mujoco_base import MuJoCoBase
 from controllers.lqr import lqr
 
-FSM_LEG1_SWING = 0
-FSM_LEG2_SWING = 1
-
-FSM_KNEE1_STANCE = 0
-FSM_KNEE1_RETRACT = 1
-
-FSM_KNEE2_STANCE = 0
-FSM_KNEE2_RETRACT = 1
-
 
 class Biped(MuJoCoBase):
     def __init__(self, xml_path):
         super().__init__(xml_path)
-        self.simend = 30.0
+        self.sim_end = 110.0  #End time of simulation
 
-        self.fsm_hip = None
-        self.fsm_knee1 = None
-        self.fsm_knee2 = None
+        self.arms = None#"fixed"
 
     def reset(self, model, data):
         # Set camera configuration
@@ -34,8 +23,11 @@ class Biped(MuJoCoBase):
         self.cam.distance = 8.0  # 5.0
         self.cam.lookat = np.array([0.0, 0.0, 2.0])
 
-        # Stand on 1 Leg
-        qpos0, ctrl0 = self.stand_one_leg(model, data)
+        # # Stand on 1 Leg
+        # qpos0, ctrl0 = self.stand_one_leg(model, data)
+
+        # Stand on 2 legs
+        qpos0, ctrl0 = self.stand_two_legs(model, data)
 
         # Get the Controller Value K
         K, dq = lqr(model, data, qpos0, ctrl0)
@@ -56,8 +48,25 @@ class Biped(MuJoCoBase):
         # LQR control law.
         data.ctrl = ctrl0 - K @ dx
 
-        # Add perturbation, increment step.
-        data.ctrl += CTRL_STD*perturb[step]
+        if self.arms == "passive":
+            data.ctrl[15] = 0
+            data.ctrl[16] = 0
+            data.ctrl[17] = 0
+            data.ctrl[18] = 0
+            data.ctrl[19] = 0
+            data.ctrl[20] = 0
+
+        elif self.arms == "fixed":
+            data.ctrl[15] = ctrl0[15]
+            data.ctrl[16] = ctrl0[16]
+            data.ctrl[17] = ctrl0[17]
+            data.ctrl[18] = ctrl0[18]
+            data.ctrl[19] = ctrl0[19]
+            data.ctrl[20] = ctrl0[20]
+
+
+        # # Add perturbation, increment step.
+        # data.ctrl += CTRL_STD*perturb[step]
 
     def simulate(self):
         step = 0
@@ -66,8 +75,18 @@ class Biped(MuJoCoBase):
         while not glfw.window_should_close(self.window):
             simstart = self.data.time
 
-            if self.data.time >= 10.0 and self.data.time <= 10.1  or self.data.time >= 20.0 and self.data.time <= 20.1:
-                self.apply_external_forces([0.0, 5, 0.0])
+            # if self.data.time >= 10 and self.data.time <= (10 + 0.2):
+            #     self.apply_external_forces([50.0, 0.0, 0.0])
+            # else:
+            #     self.apply_external_forces([0.0, 0.0, 0.0])
+
+            
+            x = 10*int(self.data.time/10)
+            y = x + 0.2
+            if self.data.time >= x and self.data.time <= y:
+                self.apply_external_forces([55.0 + 2*x/10, 0.0, 0.0])
+            else:
+                self.apply_external_forces([0.0, 0.0, 0.0])
             
             while (self.data.time - simstart < 1.0/60.0):
                 # Step simulation environment
@@ -79,7 +98,8 @@ class Biped(MuJoCoBase):
                 if step >=2390:
                     step = 0
 
-            if self.data.time >= self.simend:
+            
+            if self.data.time >= self.sim_end:
                 break
 
             # get framebuffer viewport
@@ -149,23 +169,6 @@ class Biped(MuJoCoBase):
         idx = np.argmin(np.abs(vertical_forces))
         best_offset = height_offsets[idx]
 
-        # # Plot the relationship.
-        # plt.figure(figsize=(10, 6))
-        # plt.plot(height_offsets * 1000, vertical_forces, linewidth=3)
-        # # Red vertical line at offset corresponding to smallest vertical force.
-        # plt.axvline(x=best_offset*1000, color='red', linestyle='--')
-        # # Green horizontal line at the humanoid's weight.
-        # weight = model.body_subtreemass[1]*np.linalg.norm(model.opt.gravity)
-        # plt.axhline(y=weight, color='green', linestyle='--')
-        # plt.xlabel('Height offset (mm)')
-        # plt.ylabel('Vertical force (N)')
-        # plt.grid(which='major', color='#DDDDDD', linewidth=0.8)
-        # plt.grid(which='minor', color='#EEEEEE', linestyle=':', linewidth=0.5)
-        # plt.minorticks_on()
-        # plt.title(f'Smallest vertical force '
-        #         f'found at offset {best_offset*1000:.4f}mm.')
-        # plt.show()
-
         mj.mj_resetDataKeyframe(model, data, 1)
         mj.mj_forward(model, data)
         data.qacc = 0
@@ -178,6 +181,44 @@ class Biped(MuJoCoBase):
         ctrl0 = np.atleast_2d(qfrc0) @ np.linalg.pinv(data.actuator_moment)
         ctrl0 = ctrl0.flatten()  # Save the ctrl setpoint.
         print('control setpoint:', ctrl0)
+
+        mj.mj_resetData(model, data)
+        data.qpos = qpos0
+        data.ctrl = ctrl0
+
+        return qpos0, ctrl0
+
+    def stand_two_legs(self, model, data):
+        mj.mj_resetDataKeyframe(model, data, 2)
+        mj.mj_forward(model, data)
+        data.qacc = 0  # Assert that there is no the acceleration.
+        mj.mj_inverse(model, data)
+
+        height_offsets = np.linspace(-0.001, 0.001, 2001)
+        vertical_forces = []
+        for offset in height_offsets:
+            mj.mj_resetDataKeyframe(model, data, 2)
+            mj.mj_forward(model, data)
+            data.qacc = 0
+            # Offset the height by `offset`.
+            data.qpos[2] += offset
+            mj.mj_inverse(model, data)
+            vertical_forces.append(data.qfrc_inverse[2])
+
+        # Find the height-offset at which the vertical force is smallest.
+        idx = np.argmin(np.abs(vertical_forces))
+        best_offset = height_offsets[idx]
+
+        mj.mj_resetDataKeyframe(model, data, 2)
+        mj.mj_forward(model, data)
+        data.qacc = 0
+        data.qpos[2] += best_offset
+        qpos0 = data.qpos.copy()  # Save the position setpoint.
+        mj.mj_inverse(model, data)
+        qfrc0 = data.qfrc_inverse.copy()
+
+        ctrl0 = np.atleast_2d(qfrc0) @ np.linalg.pinv(data.actuator_moment)
+        ctrl0 = ctrl0.flatten()  # Save the ctrl setpoint.
 
         mj.mj_resetData(model, data)
         data.qpos = qpos0
@@ -214,28 +255,36 @@ class Biped(MuJoCoBase):
         self.data.qfrc_applied[1] = force[1]
         self.data.qfrc_applied[2] = force[2]
 
+        # Position and size of perturbation-visualisation capsule.
+        bpos = self.data.xipos[1]
+        ppos = bpos + force
+        self.model.geom_size[20][1] = np.linalg.norm(force)/400
+        # Make visualisation capsule visible.
+        self.model.geom_rgba[20][3] = 1
+
+        # Set position / orientation of perturbation-visualisation capsule.
+        quat = np.zeros(4)
+        mat = np.zeros(9)
+        pertnorm = force / (np.linalg.norm(force)+0.0001)
+        mj.mju_quatZ2Vec(quat, pertnorm)
+        mj.mju_quat2Mat(mat, quat)
+        self.data.geom_xpos[20] = ppos
+        self.data.geom_xmat[20] = mat
+
         if np.linalg.norm(np.array(force)) != 0:
-            print("Force is applied:",force[1]) 
-            # Position and size of perturbation-visualisation capsule.
-            bpos = self.data.xipos[1]
-            ppos = bpos + force
-            self.model.geom_size[2][1] = np.linalg.norm(force)
-
+            print("Force is applied:",force[0], self.data.qfrc_applied[0]) 
+            
             # Make visualisation capsule visible.
-            self.model.geom_rgba[2][3] = 1
-
-            # Change colour of perturbed body.
-            geoms = self.model.geom_bodyid
-            self.model.geom_rgba[geoms,1] = 0.5
+            self.model.geom_rgba[20][3] = 1
 
             # Set position / orientation of perturbation-visualisation capsule.
-            quat = np.zeros(4)
-            mat = np.zeros(9)
-            pertnorm = force / np.linalg.norm(force)
-            mj.mju_quatZ2Vec(quat, pertnorm)
-            mj.mju_quat2Mat(mat, quat)
-            self.data.geom_xpos[2] = ppos
-            self.data.geom_xmat[2] = mat
+            # quat = np.zeros(4)
+            # mat = np.zeros(9)
+            # pertnorm = force / np.linalg.norm(force)
+            # mj.mju_quatZ2Vec(quat, pertnorm)
+            # mj.mju_quat2Mat(mat, quat)
+            # self.data.geom_xpos[20] = ppos
+            # self.data.geom_xmat[20] = mat
 
 def main():
     xml_path = "humanoid/humanoid.xml"

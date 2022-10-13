@@ -5,7 +5,6 @@ from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 
 from .controller import Controller
-from ..envs.cost import calc_cost
 
 logger = getLogger(__name__)
 
