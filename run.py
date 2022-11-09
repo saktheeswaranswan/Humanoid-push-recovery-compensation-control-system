@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import scipy.linalg
 from mujoco_base import MuJoCoBase
 from controllers.lqr import lqr
+from controllers.mpc_c import mpc
+from controllers.mpc import LinearMPC
 
 
 class Biped(MuJoCoBase):
@@ -31,13 +33,15 @@ class Biped(MuJoCoBase):
 
         # Get the Controller Value K
         K, dq = lqr(model, data, qpos0, ctrl0)
+        A,B,Q,R, nv = mpc(model, data, qpos0, ctrl0)
+        LMPC =  LinearMPC(A,B,Q,R)
 
         # Perturbations 
         CTRL_STD, perturb = self.noise(model)
 
-        return qpos0, ctrl0, K, dq, CTRL_STD, perturb
+        return qpos0, ctrl0, K, dq, CTRL_STD, perturb, LMPC, nv
 
-    def controller(self, model, data, dq, qpos0, ctrl0, K, CTRL_STD, perturb, step):
+    def controller(self, model, data, dq, qpos0, ctrl0, K, CTRL_STD, perturb, step, LMPC, nv):
         """
         
         """
@@ -46,7 +50,12 @@ class Biped(MuJoCoBase):
         dx = np.hstack((dq, data.qvel)).T
 
         # LQR control law.
-        data.ctrl = ctrl0 - K @ dx
+        # data.ctrl = ctrl0 - K @ dx
+        
+        # MPC control law.
+        gs = np.zeros((11,2*nv))
+        data.ctrl = ctrl0 + LMPC.obtain_sol(dx, gs)
+        print(np.linalg.norm(dx))
 
         if self.arms == "passive":
             data.ctrl[15] = 0
@@ -70,7 +79,7 @@ class Biped(MuJoCoBase):
 
     def simulate(self):
         step = 0
-        qpos0, ctrl0, K, dq, CTRL_STD, perturb = \
+        qpos0, ctrl0, K, dq, CTRL_STD, perturb, LMPC, nv = \
         self.reset(self.model, self.data)
         while not glfw.window_should_close(self.window):
             simstart = self.data.time
@@ -93,7 +102,7 @@ class Biped(MuJoCoBase):
                 mj.mj_step(self.model, self.data)
 
                 # Apply control
-                self.controller(self.model, self.data, dq, qpos0, ctrl0, K, CTRL_STD, perturb, step)
+                self.controller(self.model, self.data, dq, qpos0, ctrl0, K, CTRL_STD, perturb, step, LMPC, nv)
                 step +=1
                 if step >=2390:
                     step = 0

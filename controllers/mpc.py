@@ -3,13 +3,12 @@ from logging import getLogger
 import numpy as np
 from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
-
-from .controller import Controller
+from cvxopt import matrix, solvers
 
 logger = getLogger(__name__)
 
 
-class LinearMPC(Controller):
+class LinearMPC():
     """ Model Predictive Controller for linear model
 
     Attributes:
@@ -22,40 +21,34 @@ class LinearMPC(Controller):
         Maciejowski, J. M. (2002). Predictive control: with constraints.
     """
 
-    def __init__(self, config, model):
+    def __init__(self, A, B, Q, R):
         """
         Args:
             model (Model): system matrix, shape(state_size, state_size)
             config (ConfigModule): input matrix, shape(state_size, input_size)
         """
-        if config.TYPE != "Linear":
-            raise ValueError("{} could be not applied to \
-                              this controller".format(model))
-        super(LinearMPC, self).__init__(config, model)
+        
+        super(LinearMPC, self).__init__()
         # system parameters
-        self.model = model
-        self.A = model.A
-        self.B = model.B
-        self.state_size = config.STATE_SIZE
-        self.input_size = config.INPUT_SIZE
-        self.pred_len = config.PRED_LEN
+        self.A = A
+        self.B = B
+        (nx, nu) = self.B.shape
+        self.state_size = nx
+        self.input_size = nu
 
-        # get cost func
-        self.state_cost_fn = config.state_cost_fn
-        self.terminal_state_cost_fn = config.terminal_state_cost_fn
-        self.input_cost_fn = config.input_cost_fn
+        self.pred_len = 10
 
         # cost parameters
-        self.Q = config.Q
-        self.R = config.R
+        self.Q = Q
+        self.R = R
         self.Qs = None
         self.Rs = None
 
         # constraints
-        self.dt_input_lower_bound = config.DT_INPUT_LOWER_BOUND
-        self.dt_input_upper_bound = config.DT_INPUT_UPPER_BOUND
-        self.input_lower_bound = config.INPUT_LOWER_BOUND
-        self.input_upper_bound = config.INPUT_UPPER_BOUND
+        self.dt_input_lower_bound = None
+        self.dt_input_upper_bound = None
+        self.input_lower_bound = None
+        self.input_upper_bound = None
 
         # setup controllers
         self.W = None
@@ -187,20 +180,20 @@ class LinearMPC(Controller):
         ub = np.array(b).flatten()
 
         # using cvxopt
-        def optimized_func(dt_us):
-            return (np.dot(dt_us, np.dot(H, dt_us.reshape(-1, 1)))
-                    - np.dot(G.T, dt_us.reshape(-1, 1)))[0]
+        # def optimized_func(dt_us):
+        #     return (np.dot(dt_us, np.dot(H, dt_us.reshape(-1, 1)))
+        #             - np.dot(G.T, dt_us.reshape(-1, 1)))[0]
 
-        # constraint
-        lb = np.array([-np.inf for _ in range(len(ub))])  # one side cons
-        cons = LinearConstraint(A, lb, ub)
-        # solve
-        opt_sol = minimize(optimized_func, self.prev_sol.flatten(),
-                           constraints=[cons])
-        opt_dt_us = opt_sol.x
+        # # constraint
+        # lb = np.array([-np.inf for _ in range(len(ub))])  # one side cons
+        # cons = LinearConstraint(A, lb, ub)
+        # print(1,cons)
+        # # solve
+        # opt_sol = minimize(optimized_func, self.prev_sol.flatten(),constraints=[cons])
+        # opt_dt_us = opt_sol.x
 
         """ using cvxopt ver,
-        if you want to solve more quick please use cvxopt instead of scipy
+        if you want to solve more quick please use cvxopt instead of scipy"""
         
         # make cvxpy problem formulation
         P = 2*matrix(H)
@@ -211,7 +204,7 @@ class LinearMPC(Controller):
         # solve the problem
         opt_sol = solvers.qp(P, q, G=A, h=b)
         opt_dt_us = np.array(list(opt_sol['x']))
-        """
+        
 
         # to dt form
         opt_dt_u_seq = np.cumsum(opt_dt_us.reshape(self.pred_len,
@@ -225,13 +218,13 @@ class LinearMPC(Controller):
         self.history_u.append(opt_u_seq[0])
 
         # check costs
-        costs = self.calc_cost(curr_x,
-                               opt_u_seq.reshape(1,
-                                                 self.pred_len,
-                                                 self.input_size),
-                               g_xs)
+        # costs = self.calc_cost(curr_x,
+        #                        opt_u_seq.reshape(1,
+        #                                          self.pred_len,
+        #                                          self.input_size),
+        #                        g_xs)
 
-        logger.debug("Cost = {}".format(costs))
+        # logger.debug("Cost = {}".format(costs))
 
         return opt_u_seq[0]
 
